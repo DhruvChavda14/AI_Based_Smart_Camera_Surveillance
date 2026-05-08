@@ -36,3 +36,7 @@ python-dotenv>=1.0.0
 # --- API Server ---
 flask>=3.0.0
 flask-cors>=4.0.0
+
+# --- Notifications (email + WhatsApp/SMS) ---
+twilio>=9.0.0
+python-dotenv>=1.0.0
