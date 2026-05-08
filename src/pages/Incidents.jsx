@@ -289,7 +289,7 @@ const Incidents = () => {
                 </div>
               ) : (
                 <img
-                  src={screenshotUrl(selectedIncident.imageId, selectedIncident.screenshotPath)}
+                  src={screenshotUrl(selectedIncident.imageId)}
                   alt="Incident frame"
                   className="w-full rounded-xl object-contain max-h-[55vh] bg-black/50"
                   onError={() => setImgError(true)}

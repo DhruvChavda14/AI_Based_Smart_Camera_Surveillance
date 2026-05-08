@@ -1,4 +1,4 @@
-from flask import Flask, Response, jsonify, send_from_directory, abort, request
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 import threading
 import time
@@ -85,22 +85,6 @@ def video_feed():
         return "Generator not initialized", 500
     return Response(video_generator.generate(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@app.route('/alerts/<path:filename>')
-def serve_alert_screenshot(filename):
-    # Serve screenshots saved under the configured alerts directory (default: "alerts")
-    if video_generator is None:
-        # fallback to default directory when generator not initialized
-        screenshot_dir = "alerts"
-    else:
-        screenshot_dir = video_generator.pipeline.cfg.get("alerts", {}).get("screenshot_dir", "alerts")
-
-    screenshot_dir = os.path.abspath(screenshot_dir)
-    file_path = os.path.abspath(os.path.join(screenshot_dir, filename))
-    if not file_path.startswith(screenshot_dir + os.sep):
-        return abort(400)
-
-    return send_from_directory(screenshot_dir, filename, as_attachment=False)
 
 @app.route('/api/alerts')
 def alerts():

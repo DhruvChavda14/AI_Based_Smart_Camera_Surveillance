@@ -31,15 +31,16 @@ const AlertItem = memo(({ alert, canResolve, onResolve, onReview, isLast }) => {
             </span>
             <span className="text-sm font-medium text-gray-400">{alert.source}</span>
             {/* Storage indicator */}
-            {alert.imageId ? (
+              {alert.imageId ? (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-500/10 text-green-400 border-green-500/20">
-                🗄 Stored
+                🗄 MongoDB
               </span>
-            ) : alert.screenshotPath ? (
-              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-gray-700 text-gray-400 border-gray-600">
-                ⏳ Pending
+            ) : (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-gray-700/80 text-gray-500 border-gray-600">
+                ⏳ Uploading…
               </span>
-            ) : null}
+            )}
+
           </div>
           <h3 className="text-white font-medium text-lg">{alert.message}</h3>
           <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
@@ -55,7 +56,7 @@ const AlertItem = memo(({ alert, canResolve, onResolve, onReview, isLast }) => {
         {alert.status === 'Unresolved' ? (
           canResolve ? (
             <>
-              {(alert.imageId || alert.screenshotPath) && (
+              {alert.imageId && (
                 <button
                   onClick={() => onReview(alert)}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors text-sm font-medium border border-blue-500/20"
@@ -64,6 +65,7 @@ const AlertItem = memo(({ alert, canResolve, onResolve, onReview, isLast }) => {
                   Review Frame
                 </button>
               )}
+
               <button
                 onClick={() => onResolve(alert.id)}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded-lg transition-colors text-sm font-medium border border-green-500/20"
@@ -326,7 +328,7 @@ const Alerts = () => {
                     <img
                       alt="Alert frame"
                       className="w-full object-contain max-h-[60vh]"
-                      src={screenshotUrl(activeFrameAlert.imageId, activeFrameAlert.screenshotPath)}
+                      src={screenshotUrl(activeFrameAlert.imageId)}
                       onError={() => setActiveFrameError(true)}
                     />
                   )}

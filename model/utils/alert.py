@@ -1,10 +1,21 @@
 # utils/alert.py
 """
-Alert system: debounce, terminal print, screenshot saving, structured logging.
+Alert system: debounce, terminal print, screenshot capture and direct
+upload to MongoDB via the Node.js ingest API.
+
+Screenshots are NO LONGER saved to local disk — they are encoded as
+base64 and POSTed directly to the Node.js server, which stores them in
+MongoDB GridFS.  The JSONL log is kept as a lightweight operational
+audit trail (no file paths stored in it).
 """
 
+import base64
+import json as _json
 import os
 import time
+import threading
+import urllib.request
+import urllib.error
 from datetime import datetime
 from typing import Optional
 
@@ -20,30 +31,80 @@ logger = get_logger("alert")
 _ALERT_HEADER = f"{Fore.RED}{Style.BRIGHT}"
 _RESET = Style.RESET_ALL
 
+# ── Node.js ingest endpoint config ───────────────────────────────────────────
+_NODE_SERVER_URL = os.environ.get("NODE_SERVER_URL", "http://localhost:5050")
+_MODEL_API_KEY   = os.environ.get("MODEL_API_KEY", "")
+
+
+def _send_to_server(alert_dict: dict, img_bytes: bytes) -> Optional[str]:
+    """
+    POST alert metadata + JPEG bytes (base64-encoded) to the Node.js
+    /api/alerts/ingest endpoint.
+
+    Runs in a background thread so it never blocks the detection pipeline.
+
+    Returns the imageId string if upload succeeded, else None.
+    """
+    if not _MODEL_API_KEY:
+        logger.warning("[Alert] MODEL_API_KEY not set — skipping server ingest. "
+                       "Set MODEL_API_KEY env var to enable direct MongoDB storage.")
+        return None
+
+    payload = {
+        "alert": alert_dict,
+        "image_b64": base64.b64encode(img_bytes).decode("utf-8") if img_bytes else None,
+    }
+
+    data = _json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"{_NODE_SERVER_URL}/api/alerts/ingest",
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "x-model-api-key": _MODEL_API_KEY,
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            result = _json.loads(resp.read().decode("utf-8"))
+            image_id = result.get("imageId")
+            logger.info("[Alert] Ingested to MongoDB — alertId=%s imageId=%s",
+                        result.get("alertId"), image_id)
+            return image_id
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        logger.error("[Alert] Ingest HTTP %s: %s", e.code, body)
+    except urllib.error.URLError as e:
+        logger.error("[Alert] Ingest connection failed (Node.js offline?): %s", e.reason)
+    except Exception as e:
+        logger.error("[Alert] Ingest unexpected error: %s", e)
+    return None
+
 
 class ThreatAlert:
     """
     Manages threat alerts with:
     - Per-track debouncing (avoid spamming same alert)
-    - Screenshot saving annotated frame
-    - Terminal print with color
-    - Structured JSONL logging
+    - Frame annotation with bbox + label overlay
+    - Direct upload to MongoDB via Node.js ingest API (no local disk save)
+    - Structured JSONL audit log
     - Consecutive-frame confirmation (false positive reduction)
     """
 
     def __init__(
         self,
-        screenshot_dir: str = "alerts",
+        screenshot_dir: str = "alerts",   # kept for backward compat, no longer used for saving
         log_dir: str = "logs",
         debounce_seconds: float = 3.0,
         consecutive_required: int = 3,
     ):
-        self.screenshot_dir = screenshot_dir
         self.log_dir = log_dir
         self.debounce_seconds = debounce_seconds
         self.consecutive_required = consecutive_required
 
-        os.makedirs(screenshot_dir, exist_ok=True)
+        # Only create the log dir (no screenshot dir needed)
         os.makedirs(log_dir, exist_ok=True)
 
         # track_id → {"last_alert_time": float, "consecutive": int}
@@ -63,37 +124,24 @@ class ThreatAlert:
         """
         Call every frame when a threat is detected.  Returns True if an alert
         was fired (after confirming consecutive frames and debounce).
-
-        Args:
-            threat_type:  e.g. "FIRE", "KNIFE", "GUN", "SUSPICIOUS_ACTIVITY"
-            confidence:   Detection confidence 0–1
-            frame:        Current annotated BGR frame
-            track_id:     Person/object track ID (None = global key)
-            bbox:         (x1, y1, x2, y2) of detected threat
-            extra:        Additional metadata dict for JSONL log
-
-        Returns:
-            True if alert was triggered this call.
         """
         key = f"{threat_type}_{track_id if track_id is not None else 'global'}"
         now = time.time()
         state = self._state.setdefault(key, {"last_alert_time": 0, "consecutive": 0})
 
-        # Increment consecutive counter
         state["consecutive"] += 1
 
-        # Only fire alert after N consecutive frames AND debounce window passed
         if state["consecutive"] >= self.consecutive_required:
             if (now - state["last_alert_time"]) >= self.debounce_seconds:
                 state["last_alert_time"] = now
-                state["consecutive"] = 0  # Reset after firing
+                state["consecutive"] = 0
                 self._fire_alert(threat_type, confidence, frame, track_id, bbox, extra)
                 return True
 
         return False
 
     def reset(self, threat_type: str, track_id: Optional[int] = None) -> None:
-        """Reset consecutive counter when threat disappears (reduces false positives)."""
+        """Reset consecutive counter when threat disappears."""
         key = f"{threat_type}_{track_id if track_id is not None else 'global'}"
         if key in self._state:
             self._state[key]["consecutive"] = 0
@@ -126,14 +174,11 @@ class ThreatAlert:
             f"{_RESET}\n"
         )
 
-        # 2. Save screenshot
-        filename = f"{ts_str}_{threat_type}_id{track_id}.jpg"
-        save_path = os.path.join(self.screenshot_dir, filename)
+        # 2. Annotate frame (in memory — never written to disk)
         annotated = frame.copy()
         if bbox is not None:
             x1, y1, x2, y2 = [int(v) for v in bbox]
             cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 3)
-        # Burn-in timestamp + label
         cv2.putText(
             annotated,
             f"ALERT: {threat_type} ({confidence:.0%})",
@@ -154,24 +199,35 @@ class ThreatAlert:
             2,
             cv2.LINE_AA,
         )
-        cv2.imwrite(save_path, annotated)
 
-        # 3. Structured log
+        # 3. Encode JPEG to bytes (in memory)
+        encode_ok, img_buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        img_bytes = img_buf.tobytes() if encode_ok else None
+
+        # 4. Build alert metadata
+        filename = f"{ts_str}_{threat_type}_id{track_id}.jpg"
         event = {
             "timestamp": timestamp.isoformat(),
             "threat_type": threat_type,
             "confidence": round(float(confidence), 4),
             "track_id": track_id,
             "bbox": list(bbox) if bbox else None,
-            # Use a URL path so UIs can display frames via the Flask app
-            "screenshot": f"/alerts/{filename}",
+            "filename": filename,          # for reference only — no local path
             **(extra or {}),
         }
+
+        # 5. JSONL audit log (lightweight — no screenshot path, no image data)
         log_alert(event, log_dir=self.log_dir)
+
+        # 6. Send alert + image to Node.js → MongoDB GridFS (non-blocking)
+        def _ingest():
+            _send_to_server(event, img_bytes)
+
+        threading.Thread(target=_ingest, daemon=True).start()
+
         logger.warning(
-            "ALERT fired: %s | conf=%.2f | track=%s | saved=%s",
+            "ALERT fired: %s | conf=%.2f | track=%s | sending to MongoDB",
             threat_type,
             confidence,
             track_id,
-            save_path,
         )

@@ -216,7 +216,7 @@ const Dashboard = () => {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {computed.recent.map((img) => {
-                const src = screenshotUrl(img.imageId, img.screenshotPath);
+                const src = screenshotUrl(img.imageId);
                 const hasMongoImage = Boolean(img.imageId);
                 return (
                   <div key={img.id} className="bg-gray-800/60 rounded-xl overflow-hidden border border-gray-700/50 hover:border-gray-600 transition-colors group">

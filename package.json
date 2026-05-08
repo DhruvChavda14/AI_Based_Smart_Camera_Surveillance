@@ -7,7 +7,8 @@
     "start": "concurrently \"npm run server\" \"npm run client\" \"npm run model\"",
     "server": "cd server && npm run start",
     "client": "FORCE_COLOR=0 NO_COLOR=1 vite",
-    "model": "cd model && python3 app.py --source 0",
+    "model": "cd model && MODEL_API_KEY=secureai_model_ingest_key_2026 NODE_SERVER_URL=http://localhost:5050 python3 app.py --source 0",
+
     "dev": "FORCE_COLOR=0 NO_COLOR=1 vite",
     "build": "FORCE_COLOR=0 NO_COLOR=1 vite build",
     "lint": "eslint .",

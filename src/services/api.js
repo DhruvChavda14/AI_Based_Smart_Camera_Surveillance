@@ -3,7 +3,7 @@ import axios from 'axios';
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
-  timeout: 6000,
+  timeout: 8000,
 });
 
 api.interceptors.request.use(
@@ -17,43 +17,35 @@ api.interceptors.request.use(
 
 // ─── API endpoints ────────────────────────────────────────────────────────────
 
-export const login           = (credentials) => api.post('/auth/login', credentials);
-export const register        = (userData)    => api.post('/auth/register', userData);
-export const getCameras      = ()            => api.get('/cameras');
-export const getAnalytics    = (params = '') => api.get(`/analytics${params}`);
-export const getAlerts       = ()            => api.get('/alerts');
-export const resolveAlert    = (alertId)     => api.put(`/alerts/${alertId}/resolve`);
-export const markAllAlertsRead = ()          => api.put('/alerts/mark-all-read');
-export const syncAlerts      = ()            => api.post('/alerts/sync');
+export const login             = (credentials) => api.post('/auth/login', credentials);
+export const register          = (userData)    => api.post('/auth/register', userData);
+export const getCameras        = ()            => api.get('/cameras');
+export const getAnalytics      = (params = '') => api.get(`/analytics${params}`);
+export const getAlerts         = ()            => api.get('/alerts');
+export const resolveAlert      = (alertId)     => api.put(`/alerts/${alertId}/resolve`);
+export const markAllAlertsRead = ()            => api.put('/alerts/mark-all-read');
+export const syncAlerts        = ()            => api.post('/alerts/sync');
 
 // ─── Image URL helper ─────────────────────────────────────────────────────────
 
 /**
- * Build the URL to display an alert screenshot.
+ * Returns the URL to display an alert screenshot.
  *
- * Priority:
- *  1. imageId  → served from MongoDB GridFS  (/api/alerts/image/:id)
- *               ✅ No dependency on Flask / local filesystem
- *  2. screenshotPath → fallback proxy through Node.js to Flask
- *               ⚠️  Requires Flask model server to be running
+ * Images are always served from MongoDB GridFS via:
+ *   GET /api/alerts/image/:imageId
  *
- * @param {string|null}  imageId        GridFS ObjectId (from Alert.imageId)
- * @param {string|null}  screenshotPath Original local path (Alert.screenshotPath)
+ * If the alert has no imageId yet (not synced), returns null so the UI
+ * can show a "no image" placeholder — no Flask / local filesystem dependency.
+ *
+ * @param {string|object|null} imageId  GridFS ObjectId from Alert.imageId
  * @returns {string|null}
  */
-export function screenshotUrl(imageId, screenshotPath) {
-  // Prefer MongoDB GridFS — fully self-contained, no external dependency
-  if (imageId) {
-    return `/api/alerts/image/${imageId}`;
-  }
-
-  // Fallback: proxy through Node → Flask for alerts not yet migrated
-  if (screenshotPath) {
-    const clean = String(screenshotPath).startsWith('/') ? screenshotPath : `/${screenshotPath}`;
-    return `/api/model/screenshot?path=${encodeURIComponent(clean)}`;
-  }
-
-  return null;
+export function screenshotUrl(imageId) {
+  if (!imageId) return null;
+  // imageId may arrive as a Mongoose ObjectId serialized to object { $oid: '...' }
+  // or as a plain string
+  const id = typeof imageId === 'object' ? (imageId.$oid || imageId.toString()) : String(imageId);
+  return `/api/alerts/image/${id}`;
 }
 
 export default api;
