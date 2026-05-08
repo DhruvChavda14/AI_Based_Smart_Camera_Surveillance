@@ -56,8 +56,30 @@ alerts:
   log_dir: "logs"
   log_file: "logs/detections.log"
   debounce_seconds: 3.0          # Min seconds between repeat alerts per track ID
-  # Consecutive frame requirement before triggering alert (false positive reduction)
   consecutive_frames_required: 2
+
+  # Admin control: set to false to disable all automatic alerts (email + SMS)
+  auto_alerts_enabled: true
+
+  email:
+    enabled: true
+    # Threats that trigger email + SMS notifications
+    target_threats: ["FIRE", "SMOKE", "PISTOL", "GUN", "KNIFE"]
+
+  # --- Nearest Police Station (shown in PISTOL/GUN alerts) ---
+  police_contact:
+    station_name: "Cyber City Police Station"
+    phone: "0124-2581000"
+    emergency: "112"
+    address: "Cyber City, DLF Phase 2, Gurugram, Haryana 122002"
+
+  # --- Nearest Fire Department (shown in FIRE/SMOKE alerts) ---
+  fire_department:
+    station_name: "Gurugram Fire Station"
+    phone: "0124-2322436"
+    emergency: "101"
+    address: "Fire Station Road, Sector 29, Gurugram, Haryana 122001"
+
 
 # --- Overlap / Proximity ---
 overlap:

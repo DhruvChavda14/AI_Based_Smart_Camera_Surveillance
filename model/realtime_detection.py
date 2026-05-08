@@ -270,11 +270,16 @@ class DetectionPipeline:
         if not dry_run:
             self._load_models()
 
+        alert_cfg = cfg.get("alerts", {})
         self.alert_engine = ThreatAlert(
-            screenshot_dir=cfg["alerts"]["screenshot_dir"],
-            log_dir=cfg["alerts"]["log_dir"],
-            debounce_seconds=cfg["alerts"]["debounce_seconds"],
-            consecutive_required=cfg["alerts"]["consecutive_frames_required"],
+            screenshot_dir=alert_cfg.get("screenshot_dir", "alerts"),
+            log_dir=alert_cfg.get("log_dir", "logs"),
+            debounce_seconds=alert_cfg.get("debounce_seconds", 3.0),
+            consecutive_required=alert_cfg.get("consecutive_frames_required", 3),
+            email_cfg=alert_cfg.get("email", {}),
+            police_contact=alert_cfg.get("police_contact", {}),
+            fire_department=alert_cfg.get("fire_department", {}),
+            auto_alerts_enabled=alert_cfg.get("auto_alerts_enabled", True),
         )
         self.vis = Visualizer()
         self._track_buffers: dict[int, deque] = {}
